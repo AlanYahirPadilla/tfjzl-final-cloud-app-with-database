@@ -7,7 +7,9 @@ from django.shortcuts import get_object_or_404, render, redirect
 from django.urls import reverse
 from django.views import generic
 from django.contrib.auth import login, logout, authenticate
+from .models import Course, Lesson, Instructor, Learner, Question, Choice, Submission, Enrollment
 import logging
+
 # Get an instance of a logger
 logger = logging.getLogger(__name__)
 # Create your views here.
@@ -132,5 +134,50 @@ def extract_answers(request):
         # Calculate the total score
 #def show_exam_result(request, course_id, submission_id):
 
+def submit(request, course_id):
+    course = get_object_or_404(Course, pk=course_id)
+    user = request.user
+    
+    # Obtener la inscripción del usuario al curso
+    enrollment = Enrollment.objects.get(user=user, course=course)
+    
+    # Crear un nuevo envío (submission)
+    submission = Submission.objects.create(enrollment=enrollment)
+    
+    # Recopilar las opciones seleccionadas del formulario
+    choices = []
+    for key, value in request.POST.items():
+        if key.startswith('choice_'):
+            choices.append(Choice.objects.get(id=value))
+            
+    # Guardar las opciones en el envío
+    submission.choices.set(choices)
+    submission_id = submission.id
+    
+    # Redirigir a la página de resultados
+    return HttpResponseRedirect(reverse(viewname='onlinecourse:exam_result', args=(course_id, submission_id,)))
 
+
+def show_exam_result(request, course_id, submission_id):
+    context = {}
+    course = get_object_or_404(Course, pk=course_id)
+    submission = Submission.objects.get(id=submission_id)
+    choices = submission.choices.all()
+
+    total_score = 0
+    questions = course.question_set.all()
+
+    for question in questions:
+        correct_choices = question.choice_set.filter(is_correct=True)
+        selected_choices = choices.filter(question=question)
+
+        # Validar si las respuestas seleccionadas son iguales a las correctas
+        if set(correct_choices) == set(selected_choices):
+            total_score += question.grade
+
+    context['course'] = course
+    context['grade'] = total_score
+    context['choices'] = choices
+
+    return render(request, 'onlinecourse/exam_result_bootstrap.html', context)
 
